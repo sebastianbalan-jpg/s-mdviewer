@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Rich Markdown Editor & Viewer</title>
+    
+    <script src="[https://cdn.jsdelivr.net/npm/marked/marked.min.js](https://cdn.jsdelivr.net/npm/marked/marked.min.js)"></script>
+    
+    <script src="[https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js](https://cdn.jsdelivr.net/npm/svg-pan-zoom@3.6.1/dist/svg-pan-zoom.min.js)"></script>
+    
+    <style>
+        /* Base styling */
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            line-height: 1.6; 
+            margin: 0; 
+            padding: 20px 2%; 
+            color: #24292e; 
+            box-sizing: border-box;
+            background-color: #f6f8fa;
+        }
+        
+        /* Control panel styling */
+        #controls { 
+            margin-bottom: 20px; 
+            padding: 15px 20px; 
+            background: #ffffff; 
+            border-radius: 8px; 
+            border: 1px solid #e1e4e8; 
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        }
+
+        .control-group {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .btn {
+            background-color: #2ea44f;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background-color 0.2s;
+        }
+        
+        .btn:hover { background-color: #2c974b; }
+        .btn-secondary { background-color: #fafbfc; color: #24292e; border: 1px solid #e1e4e8; }
+        .btn-secondary:hover { background-color: #f3f4f6; }
+
+        /* Workspace Layout (Split Screen logic) */
+        #workspace {
+            display: flex;
+            gap: 20px;
+            width: 100%;
+        }
+
+        #editor-pane {
+            display: none;
+            flex: 1;
+            min-width: 0; 
+        }
+
+        #viewer-pane {
+            flex: 1;
+            min-width: 0;
+        }
+
+        /* Editing mode classes applied to body */
+        body.mode-edit #editor-pane { display: block; }
+        
+        /* The Editor Textarea */
+        #raw-viewer {
+            width: 100%;
+            height: 80vh; 
+            padding: 20px;
+            border: 1px solid #e1e4e8;
+            border-radius: 6px;
+            background: #1e1e1e; 
+            color: #d4d4d4;
+            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+            font-size: 14px;
+            box-sizing: border-box;
+            resize: none;
+            outline: none;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+            white-space: pre;
+            overflow-wrap: normal;
+            overflow-x: auto;
+        }
+        
+        #raw-viewer:focus { border-color: #0366d6; }
+
+        /* The Rendered Viewer */
+        #viewer { 
+            padding: 20px 30px; 
+            border: 1px solid #e1e4e8; 
+            border-radius: 6px; 
+            min-height: 80vh; 
+            background: #ffffff; 
+            box-sizing: border-box;
+            overflow-y: auto;
+            max-height: 80vh;
+        }
+
+        /* Tooltip styling for graph elements */
+        #graph-tooltip {
+            position: absolute;
+            display: none;
+            background: rgba(36, 41, 46, 0.95);
+            color: #fff;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            z-index: 1000;
+            pointer-events: none; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            max-width: 300px;
+        }
+
+        /* Markdown elements styling */
+        pre { background-color: #f6f8fa; padding: 16px; overflow: auto; border-radius: 6px; }
+        code { font-family: ui-monospace, SFMono-Regular, monospace; background-color: #f6f8fa; padding: 0.2em 0.4em; border-radius: 3px; font-size: 85%; }
+        pre code { padding: 0; background-color: transparent; }
+        table { border-collapse: collapse; width: 100%; margin-bottom: 16px; }
+        table th, table td { padding: 6px 13px; border: 1px solid #dfe2e5; }
+        table tr:nth-child(2n) { background-color: #f6f8fa; }
+        
+        /* Mermaid Graph Container fixing */
+        .mermaid {
+            width: 100%;
+            height: 70vh; 
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .mermaid svg {
+            width: 100% !important;
+            height: 100% !important; 
+            max-width: none !important; 
+            border: 1px dashed #e1e4e8;
+            border-radius: 4px;
+            background-color: #fafbfc; 
+        }
+        
+        /* Highlight indicator */
+        .mermaid .node:hover, .mermaid .actor:hover {
+            opacity: 0.8;
+            stroke: #2ea44f !important;
+            stroke-width: 3px !important;
+        }
+    </style>
+</head>
+<body class="mode-view">
+
+    <div id="controls">
+        <div class="control-group">
+            <button id="btn-new" class="btn btn-secondary">📄 New Blank File</button>
+            <input type="file" id="md-file" accept=".md, .txt, .markdown" style="margin-left: 10px;">
+        </div>
+        <div class="control-group">
+            <button id="btn-save" class="btn btn-secondary">💾 Save / Download</button>
+            <button id="toggle-mode" class="btn">✏️ Enable Split-Screen Editing</button>
+        </div>
+    </div>
+
+    <div id="graph-tooltip"></div>
+
+    <div id="workspace">
+        <div id="editor-pane">
+            <textarea id="raw-viewer" placeholder="Type your markdown and mermaid graphs here..."></textarea>
+        </div>
+
+        <div id="viewer-pane">
+            <div id="viewer">
+                <h2 style="color: #6a737d; text-align: center; margin-top: 20%;">
+                    Upload a file or click "New Blank File" to begin.
+                </h2>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import mermaid from '[https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs](https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs)';
+        
+        mermaid.initialize({ startOnLoad: false, theme: 'default' });
+
+        const viewer = document.getElementById('viewer');
+        const rawViewer = document.getElementById('raw-viewer');
+        const toggleBtn = document.getElementById('toggle-mode');
+        const newBtn = document.getElementById('btn-new');
+        const saveBtn = document.getElementById('btn-save');
+        const tooltip = document.getElementById('graph-tooltip');
+        
+        let isEditMode = false;
+        let renderTimeout = null;
+
+        // Custom Marked.js renderer to intercept Mermaid blocks
+        const renderer = new marked.Renderer();
+        renderer.code = function(arg1, arg2) {
+            const text = typeof arg1 === 'object' ? arg1.text : arg1;
+            const lang = typeof arg1 === 'object' ? arg1.lang : arg2;
+            if (lang === 'mermaid') {
+                return `<div class="mermaid">${text}</div>`;
+            }
+            return `<pre><code class="language-${lang}">${text}</code></pre>`;
+        };
+        marked.use({ renderer });
+
+        // --- Core Rendering Function ---
+        async function renderMarkdown(markdownText) {
+            viewer.innerHTML = marked.parse(markdownText);
+            try {
+                await mermaid.run({ querySelector: '.mermaid' });
+                applyGraphEnhancements();
+            } catch (error) {
+                console.error('Mermaid parsing error. This is normal during live editing if syntax is incomplete.', error);
+            }
+        }
+
+        // --- Event Listeners ---
+
+        // 1. Live Typing (Debounced)
+        rawViewer.addEventListener('input', () => {
+            clearTimeout(renderTimeout);
+            renderTimeout = setTimeout(() => {
+                renderMarkdown(rawViewer.value);
+            }, 800);
+        });
+
+        // 2. Toggle Split-Screen Mode
+        toggleBtn.addEventListener('click', () => {
+            isEditMode = !isEditMode;
+            if (isEditMode) {
+                document.body.classList.replace('mode-view', 'mode-edit');
+                toggleBtn.innerHTML = '👁️ View Only Mode';
+            } else {
+                document.body.classList.replace('mode-edit', 'mode-view');
+                toggleBtn.innerHTML = '✏️ Enable Split-Screen Editing';
+            }
+        });
+
+        // 3. Load File (WITH RAW MERMAID AUTO-DETECT)
+        document.getElementById('md-file').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                let text = e.target.result.trim();
+                
+                // Identify if it's pure Mermaid by checking the first word
+                const firstWord = text.split(/\s+/)[0];
+                const mermaidKeywords = ['graph', 'flowchart', 'sequenceDiagram', 'classDiagram', 'stateDiagram', 'erDiagram', 'journey', 'gantt', 'pie', 'mindmap', 'timeline', 'gitGraph'];
+                
+                // If it's pure Mermaid, wrap it in Markdown code blocks automatically
+                if (mermaidKeywords.includes(firstWord)) {
+                    text = '```mermaid\n' + text + '\n```';
+                }
+
+                rawViewer.value = text;
+                renderMarkdown(text);
+            };
+            reader.readAsText(file);
+        });
+
+        // 4. New Blank File
+        newBtn.addEventListener('click', () => {
+            const template = `# New Graph Document\n\n\`\`\`mermaid\ngraph TD;\n    A[Start] --> B[Edit Me!];\n\`\`\``;
+            rawViewer.value = template;
+            renderMarkdown(template);
+            if (!isEditMode) toggleBtn.click();
+        });
+
+        // 5. Save / Download
+        saveBtn.addEventListener('click', () => {
+            const text = rawViewer.value;
+            if (!text.trim()) {
+                alert("Nothing to save!");
+                return;
+            }
+            const blob = new Blob([text], { type: 'text/markdown' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'graph_document.md';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+
+        // --- Graph Enhancements ---
+        function applyGraphEnhancements() {
+            const svgs = document.querySelectorAll('.mermaid svg');
+            svgs.forEach((svg, index) => {
+                if (!svg.id) svg.id = 'mermaid-graph-' + index;
+
+                svg.removeAttribute('height');
+                svg.removeAttribute('width');
+
+                svgPanZoom(svg, {
+                    zoomEnabled: true,
+                    controlIconsEnabled: true, 
+                    fit: true,
+                    center: true,
+                    minZoom: 0.1, 
+                    maxZoom: 10
+                });
+
+                const interactiveElements = svg.querySelectorAll('.node, .actor');
+                interactiveElements.forEach(el => {
+                    el.style.cursor = 'pointer';
+
+                    el.addEventListener('mousemove', (e) => {
+                        const elementId = el.id || 'N/A';
+                        const textContent = el.textContent ? el.textContent.trim() : 'No Label';
+                        const elementType = el.classList.contains('actor') ? 'Actor / Participant' : 'Node / Step';
+
+                        tooltip.innerHTML = `
+                            <strong>Type:</strong> ${elementType}<br>
+                            <strong>Internal ID:</strong> ${elementId}<br>
+                            <strong>Label:</strong> ${textContent}
+                        `;
+                        
+                        tooltip.style.display = 'block';
+                        tooltip.style.left = (e.pageX + 15) + 'px';
+                        tooltip.style.top = (e.pageY + 15) + 'px';
+                    });
+
+                    el.addEventListener('mouseleave', () => {
+                        tooltip.style.display = 'none';
+                    });
+                });
+            });
+        }
+    </script>
+</body>
+</html>
