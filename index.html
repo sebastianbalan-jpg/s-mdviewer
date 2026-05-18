@@ -121,7 +121,7 @@
     </div>
 
     <script>
-        // Synchronous initialization 
+        // Start Mermaid globally without auto-running
         mermaid.initialize({ startOnLoad: false, theme: 'default' });
 
         const viewer = document.getElementById('viewer');
@@ -134,41 +134,51 @@
         let isEditMode = false;
         let renderTimeout = null;
 
-        // Upgraded Marked.js Renderer to support both v11 and v12+ API architectures
-        marked.use({
-            renderer: {
-                code: function() {
-                    const arg = arguments[0];
-                    const lang = typeof arg === 'object' ? (arg.lang || '') : (arguments[1] || '');
-                    const text = typeof arg === 'object' ? arg.text : arg;
-
-                    if (lang === 'mermaid') {
-                        return `<div class="mermaid">${text}</div>`;
-                    }
-                    return `<pre><code class="language-${lang}">${text}</code></pre>`;
-                }
-            }
-        });
-
-        // --- Core Rendering Function (With Error Boundaries) ---
         async function renderMarkdown(markdownText) {
             try {
+                // Let marked do standard parsing WITHOUT the custom interceptor
                 viewer.innerHTML = marked.parse(markdownText);
             } catch (err) {
                 viewer.innerHTML = `<h3 style="color:red">Markdown Parse Error:</h3><pre>${err.message}</pre>`;
                 return;
             }
             
-            try {
-                await mermaid.run({ querySelector: '.mermaid' });
-                applyGraphEnhancements();
-            } catch (error) {
-                console.error('Mermaid found a syntax error. A graphical warning should appear in the viewer.', error);
-                // Mermaid automatically injects a visual error box into the DOM, so we leave it alone.
-            }
-        }
+            // Find all mermaid code blocks generated natively by Marked
+            const mermaidBlocks = viewer.querySelectorAll('code.language-mermaid');
+            
+            for (let i = 0; i < mermaidBlocks.length; i++) {
+                const block = mermaidBlocks[i];
+                // .textContent extracts the exact raw string, bypassing browser HTML decoding bugs!
+                const code = block.textContent.trim(); 
+                
+                const id = `mermaid-graph-${Date.now()}-${i}`;
+                const container = document.createElement('div');
+                container.className = 'mermaid';
+                
+                try {
+                    // Render directly to SVG string in memory
+                    const { svg } = await mermaid.render(id, code);
+                    container.innerHTML = svg;
+                } catch (error) {
+                    console.error('Mermaid syntax error caught:', error);
+                    // Explicitly print the error so you can debug the specific line
+                    container.innerHTML = `
+                        <div style="padding: 20px; color: #b30000; background-color: #ffe6e6; border: 1px solid #b30000; border-radius: 6px; font-family: monospace; width: 100%; text-align: left;">
+                            <strong>Mermaid Syntax Error:</strong><br>
+                            <pre style="background: transparent; color: inherit;">${error.message || 'Invalid syntax'}</pre>
+                        </div>`;
+                }
 
-        // --- Event Listeners ---
+                // Safely swap the raw code block container with the rendered graphic
+                if (block.parentElement.tagName === 'PRE') {
+                    block.parentElement.replaceWith(container);
+                } else {
+                    block.replaceWith(container);
+                }
+            }
+            
+            applyGraphEnhancements();
+        }
 
         rawViewer.addEventListener('input', () => {
             clearTimeout(renderTimeout);
@@ -195,7 +205,6 @@
             const reader = new FileReader();
             reader.onload = function(e) {
                 try {
-                    // Strip hidden Byte Order Marks that could break logic
                     let text = e.target.result.replace(/^\uFEFF/, '').trim();
                     
                     const firstWord = text.split(/\s+/)[0];
@@ -231,11 +240,10 @@
             document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
         });
 
-        // --- Graph Enhancements ---
         function applyGraphEnhancements() {
             const svgs = document.querySelectorAll('.mermaid svg');
             svgs.forEach((svg, index) => {
-                if (!svg.id) svg.id = 'mermaid-graph-' + index;
+                if (!svg.id) svg.id = 'mermaid-graph-enhanced-' + index;
 
                 svg.removeAttribute('height');
                 svg.removeAttribute('width');
