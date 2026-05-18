@@ -136,7 +136,7 @@
 
         async function renderMarkdown(markdownText) {
             try {
-                // Let marked do standard parsing WITHOUT the custom interceptor
+                // Let marked do standard parsing 
                 viewer.innerHTML = marked.parse(markdownText);
             } catch (err) {
                 viewer.innerHTML = `<h3 style="color:red">Markdown Parse Error:</h3><pre>${err.message}</pre>`;
@@ -148,9 +148,15 @@
             
             for (let i = 0; i < mermaidBlocks.length; i++) {
                 const block = mermaidBlocks[i];
-                // .textContent extracts the exact raw string, bypassing browser HTML decoding bugs!
-                const code = block.textContent.trim(); 
+                let code = block.textContent.trim(); 
                 
+                // --- AUTO-FIXER PIPELINE ---
+                // 1. Remove strict space violations around the ':::' class operator
+                code = code.replace(/\s*:::\s*/g, ':::');
+                
+                // 2. Unescape generic HTML entities just in case Marked.js encoded arrows or quotes
+                code = code.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+
                 const id = `mermaid-graph-${Date.now()}-${i}`;
                 const container = document.createElement('div');
                 container.className = 'mermaid';
@@ -165,7 +171,7 @@
                     container.innerHTML = `
                         <div style="padding: 20px; color: #b30000; background-color: #ffe6e6; border: 1px solid #b30000; border-radius: 6px; font-family: monospace; width: 100%; text-align: left;">
                             <strong>Mermaid Syntax Error:</strong><br>
-                            <pre style="background: transparent; color: inherit;">${error.message || 'Invalid syntax'}</pre>
+                            <pre style="background: transparent; color: inherit; white-space: pre-wrap;">${error.message || 'Invalid syntax'}</pre>
                         </div>`;
                 }
 
